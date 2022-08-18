@@ -27,28 +27,36 @@ thread_local!(
     static RNG_SOURCE: Result<RngSource, Error> = getrandom_init();
 );
 
-pub(crate) fn getrandom_inner(dest: &mut [u8]) -> Result<(), Error> {
+pub(crate) unsafe fn getrandom_inner(mut dst: *mut u8, mut len: usize) -> Result<(), Error> {
     RNG_SOURCE.with(|result| {
         let source = result.as_ref().map_err(|&e| e)?;
 
         match source {
             RngSource::Node(n) => {
-                if n.random_fill_sync(dest).is_err() {
+                // We have to create a slice to pass it to the Node function.
+                // Since `dst` may be uninitialized, we have to initialize it first.
+                core::ptr::write_bytes(dst, 0, len);
+                let dst = core::slice::from_raw_parts_mut(dst, len);
+                if n.random_fill_sync(dst).is_err() {
                     return Err(Error::NODE_RANDOM_FILL_SYNC);
                 }
             }
             RngSource::Browser(crypto, buf) => {
                 // getRandomValues does not work with all types of WASM memory,
                 // so we initially write to browser memory to avoid exceptions.
-                for chunk in dest.chunks_mut(BROWSER_CRYPTO_BUFFER_SIZE) {
+                while len != 0 {
+                    let chunk_len = core::cmp::min(len, BROWSER_CRYPTO_BUFFER_SIZE);
                     // The chunk can be smaller than buf's length, so we call to
                     // JS to create a smaller view of buf without allocation.
-                    let sub_buf = buf.subarray(0, chunk.len() as u32);
+                    let sub_buf = buf.subarray(0, chunk_len as u32);
 
                     if crypto.get_random_values(&sub_buf).is_err() {
                         return Err(Error::WEB_GET_RANDOM_VALUES);
                     }
-                    sub_buf.copy_to(chunk);
+                    sub_buf.raw_copy_to_ptr(dst);
+
+                    dst = dst.add(chunk_len);
+                    len -= chunk_len;
                 }
             }
         };

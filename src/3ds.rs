@@ -10,8 +10,9 @@
 use crate::util_libc::sys_fill_exact;
 use crate::Error;
 
-pub fn getrandom_inner(dest: &mut [u8]) -> Result<(), Error> {
-    sys_fill_exact(dest, |buf| unsafe {
-        libc::getrandom(buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0)
+pub unsafe fn getrandom_inner(dst: *mut u8, len: usize) -> Result<(), Error> {
+    // TODO: use `cast` on MSRV bump to 1.38
+    sys_fill_exact(dst, len, |dst, len| {
+        libc::getrandom(dst as *mut libc::c_void, len, 0)
     })
 }

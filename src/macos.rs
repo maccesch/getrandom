@@ -16,21 +16,24 @@ use core::mem;
 
 type GetEntropyFn = unsafe extern "C" fn(*mut u8, libc::size_t) -> libc::c_int;
 
-pub fn getrandom_inner(dest: &mut [u8]) -> Result<(), Error> {
+pub unsafe fn getrandom_inner(mut dst: *mut u8, mut len: usize) -> Result<(), Error> {
     // getentropy(2) was added in 10.12, Rust supports 10.7+
     static GETENTROPY: Weak = unsafe { Weak::new("getentropy\0") };
     if let Some(fptr) = GETENTROPY.ptr() {
-        let func: GetEntropyFn = unsafe { mem::transmute(fptr) };
-        for chunk in dest.chunks_mut(256) {
-            let ret = unsafe { func(chunk.as_mut_ptr(), chunk.len()) };
+        let func: GetEntropyFn = mem::transmute(fptr);
+        while len != 0 {
+            let chunk_len = core::cmp::min(len, 256);
+            let ret = func(dst, chunk_len);
             if ret != 0 {
                 return Err(last_os_error());
             }
+            dst = dst.add(chunk_len);
+            len -= chunk_len;
         }
         Ok(())
     } else {
         // We fallback to reading from /dev/random instead of SecRandomCopyBytes
         // to avoid high startup costs and linking the Security framework.
-        use_file::getrandom_inner(dest)
+        use_file::getrandom_inner(dst, len)
     }
 }

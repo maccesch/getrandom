@@ -9,13 +9,17 @@
 //! Implementation for OpenBSD
 use crate::{util_libc::last_os_error, Error};
 
-pub fn getrandom_inner(dest: &mut [u8]) -> Result<(), Error> {
+pub unsafe fn getrandom_inner(mut dst: *mut u8, mut len: usize) -> Result<(), Error> {
     // getentropy(2) was added in OpenBSD 5.6, so we can use it unconditionally.
-    for chunk in dest.chunks_mut(256) {
-        let ret = unsafe { libc::getentropy(chunk.as_mut_ptr() as *mut libc::c_void, chunk.len()) };
+    while len != 0 {
+        let chunk_len = core::cmp::min(len, 256);
+        // TODO: use `cast` on MSRV bump to 1.38
+        let ret = libc::getentropy(dst as *mut libc::c_void, chunk_len);
         if ret == -1 {
             return Err(last_os_error());
         }
+        dst = dst.add(chunk_len);
+        len -= chunk_len;
     }
     Ok(())
 }
