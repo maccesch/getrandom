@@ -15,8 +15,7 @@ fn bench<const N: usize>(b: &mut test::Bencher) {
 fn bench_raw<const N: usize>(b: &mut test::Bencher) {
     b.iter(|| {
         let mut buf = core::mem::MaybeUninit::<[u8; N]>::uninit();
-        // TODO: use `cast` on MSRV bump to 1.38
-        unsafe { getrandom::getrandom_raw(buf.as_mut_ptr() as *mut u8, N).unwrap() };
+        unsafe { getrandom::getrandom_raw(buf.as_mut_ptr().cast(), N).unwrap() };
         test::black_box(&buf);
     });
     b.bytes = N as u64;
